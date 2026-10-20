@@ -20,6 +20,7 @@ const settings = require('./lib/settings');
 const skipPrompts = require('./lib/skip-prompts');
 const origin = require('./lib/origin');
 const pendingEnds = require('./lib/pending-ends');
+const hibearnate = require('./lib/hibearnate');
 
 const VERSION = require('./package.json').version;
 const store = new Store();
@@ -513,7 +514,28 @@ server.listen(PORT, config.HOST, () => {
   setImmediate(backfillRepoUrls);
   setImmediate(drainPendingEnds);
   applyUsagePollTimer();
+  startBusyLease();
 });
+
+// Tell Hibearnate whether any session is busy (issue #36 — see
+// lib/hibearnate.js). Started only once listen() succeeds: an instance that
+// loses the port race exits on EADDRINUSE with a stale snapshot of the board,
+// and must never write or delete the owner's lease. The first sync is a
+// renewal so that a lease a crashed run left behind is corrected at once.
+const busyLease = new hibearnate.Lease({ dir: hibearnate.leaseDir(process.env, process.platform) });
+function syncBusyLease(renew) {
+  try {
+    busyLease.sync(hibearnate.anyBusy(store.listCards(null), Date.now()), renew);
+  } catch (_) { /* best effort: a lease must never take the server down */ }
+}
+function startBusyLease() {
+  if (!busyLease.dir) return;
+  syncBusyLease(true);
+  store.on('change', () => syncBusyLease(false));
+  // The timer is also what notices a card going stale (FRESH_MS) with no
+  // board write to announce it.
+  setInterval(() => syncBusyLease(true), hibearnate.RENEW_MS).unref();
+}
 
 // Apply the SessionEnd markers hooks left while this server was down (issue
 // #32 — see lib/pending-ends.js). At boot, because a down server is exactly
@@ -584,6 +606,11 @@ process.on('SIGTERM', shutdown);
 // unconditional flush would clobber the owner's newer file.
 process.on('exit', () => {
   try { if (store.hasPendingSave()) store.flushSync(); } catch (_) { /* ignore */ }
+  // shutdown() and the uncaught handler both end in process.exit(), so this
+  // one release covers them. Only when held: an EADDRINUSE instance never
+  // wrote a lease, and deleting the owner's would end its report early. A
+  // kill that skips 'exit' needs nothing, because the lease runs out alone.
+  try { if (busyLease.held) busyLease.release(); } catch (_) { /* ignore */ }
 });
 process.on('uncaughtException', (err) => {
   // eslint-disable-next-line no-console

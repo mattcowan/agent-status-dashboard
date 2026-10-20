@@ -84,6 +84,18 @@ lib/pending-ends.js  durable SessionEnd markers (issue #32). The SessionEnd
                      them at boot and every minute, applying the hook's own
                      end time, and deletes a marker only after flushSync()
                      has put that end on disk.
+lib/hibearnate.js    the busy lease that tells Hibearnate (a Windows tray
+                     app, mattcowan/hibearnate) a session is working (issue
+                     #36). One file under %LOCALAPPDATA%\Hibearnate\leases\,
+                     renewed every minute while any card is busy and deleted
+                     when none is. Started only after listen() succeeds, so
+                     an EADDRINUSE loser never touches the owner's lease. On
+                     EPERM it skips a renewal and never falls back to an
+                     in-place write the way atomicWrite does: Hibearnate has
+                     the file open with FileShare.Read while it reads it.
+                     The busy test mirrors Hibearnate's old board read
+                     (working, not ended, active within 6 h); change both
+                     together or the cut-over changes when laptops sleep.
 bin/status.js        the one CLI: hook subcommands, Claude subcommands,
                      ensure-server, session resolution
 public/index.html    markup for all three views (board/projects/archive)
