@@ -1,20 +1,20 @@
 # Claude Session Status Dashboard
 
-A local Kanban board that tracks the status of **every Claude Code session** across
-all your projects — so when you have several sessions running at once you can see
+A local Kanban board that tracks the status of **every Claude Code & other agentic session** across
+all your projects, so when you have several sessions running at once you can see
 at a glance which are working, which need you, and which are ready for review.
 
-Open it at **http://127.0.0.1:4787**.
+Default location after install at **http://127.0.0.1:4787**.
 
 ![Screenshot of the dashboard: four Kanban columns of Claude session cards, beneath a row of usage meters.](docs/screenshot.jpg)
 
-One **card per Claude session**, keyed by its session id and tagged with the
+One **card per session**, keyed by its session id and tagged with the
 project folder it ran in. Cards move through columns automatically as sessions
 work and stop; **you** decide when something is truly *Done*.
 
 Reading the shot above: **Working / Needs Input / Ready for Review** are the
 three fixed columns Claude itself moves cards between, **Merging** is a custom
-one managed by hand, and **Done** is hidden behind a toggle. Each card carries
+column managed by hand, and **Done** is hidden behind a toggle. Each card carries
 its project folder, git remote and branch, the model that did the work, and a
 **⚙ auto-captured** badge where Claude stopped without declaring an outcome.
 
