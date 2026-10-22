@@ -73,6 +73,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # Detached at the event's commit, not on a local branch. On
+          # issue_comment, checkout would leave the default branch checked out
+          # as `main`; for a fork PR the action then runs
+          # `git fetch origin pull/<n>/head:<head branch>`, and git refuses to
+          # fetch into the checked-out branch when the fork's head branch is
+          # also named `main` (common: forks often open PRs from their main).
+          ref: ${{ github.sha }}
           fetch-depth: 1
 
       - name: Run Claude Code
