@@ -20,6 +20,7 @@ const settings = require('./lib/settings');
 const skipPrompts = require('./lib/skip-prompts');
 const origin = require('./lib/origin');
 const pendingEnds = require('./lib/pending-ends');
+const hibearnate = require('./lib/hibearnate');
 
 const VERSION = require('./package.json').version;
 const store = new Store();
@@ -513,7 +514,34 @@ server.listen(PORT, config.HOST, () => {
   setImmediate(backfillRepoUrls);
   setImmediate(drainPendingEnds);
   applyUsagePollTimer();
+  startBusyLease();
 });
+
+// Tell Hibearnate whether any session is busy (issue #36 — see
+// lib/hibearnate.js). Built only once listen() succeeds, and named after the
+// port this instance actually bound. An instance that loses the port race
+// exits on EADDRINUSE with a stale snapshot of the board and never has a lease
+// at all; one on another port (a scratch copy under PORT=4799) has a lease of
+// its own and cannot touch this one. The first sync is a renewal so that a
+// lease a crashed run on this port left behind is corrected at once.
+let busyLease = null;
+function syncBusyLease(renew) {
+  try {
+    busyLease.sync(hibearnate.anyBusy(store.listCards(null), Date.now()), renew);
+  } catch (_) { /* best effort: a lease must never take the server down */ }
+}
+function startBusyLease() {
+  const dir = hibearnate.leaseDir(process.env, process.platform);
+  const addr = server.address();
+  const name = hibearnate.leaseName(addr && addr.port);
+  if (!dir || !name) return;
+  busyLease = new hibearnate.Lease({ dir: dir, name: name });
+  syncBusyLease(true);
+  store.on('change', () => syncBusyLease(false));
+  // The timer is also what notices a card going stale (FRESH_MS) with no
+  // board write to announce it.
+  setInterval(() => syncBusyLease(true), hibearnate.RENEW_MS).unref();
+}
 
 // Apply the SessionEnd markers hooks left while this server was down (issue
 // #32 — see lib/pending-ends.js). At boot, because a down server is exactly
@@ -584,6 +612,11 @@ process.on('SIGTERM', shutdown);
 // unconditional flush would clobber the owner's newer file.
 process.on('exit', () => {
   try { if (store.hasPendingSave()) store.flushSync(); } catch (_) { /* ignore */ }
+  // shutdown() and the uncaught handler both end in process.exit(), so this
+  // one release covers them. An EADDRINUSE instance has no lease to release,
+  // and a lease that was never written is left alone. A kill that skips
+  // 'exit' needs nothing, because the lease runs out alone.
+  try { if (busyLease && busyLease.held) busyLease.release(); } catch (_) { /* ignore */ }
 });
 process.on('uncaughtException', (err) => {
   // eslint-disable-next-line no-console

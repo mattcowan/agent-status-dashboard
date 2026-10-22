@@ -654,6 +654,26 @@ already on the board and in the archive. The stored cards do not change, so
 clearing an edit restores what each card showed before. The edits are kept in
 `data/projects.json`.
 
+## Hibearnate: keep a Windows laptop awake
+
+[Hibearnate](https://github.com/mattcowan/hibearnate) is a Windows tray app. In its Auto mode, it keeps the laptop awake while work runs. The dashboard tells Hibearnate when a session is busy.
+
+A session is busy when its card has all of these properties:
+
+- The card is in the **Working** column.
+- The session did not end.
+- The card has activity in the last 6 hours.
+
+While one or more cards are busy, the server keeps a busy report in `%LOCALAPPDATA%\Hibearnate\leases\agent-dashboard-<port>.json`. For the default port, the file is `agent-dashboard-4787.json`. Each server changes only the report for its own port. Each report has a time limit of 3 minutes. The server renews the report every minute. When no card is busy, the server deletes the report. It also deletes the report when it stops. If the server crashes, the report ends by itself after 3 minutes.
+
+When a card moves into Working or out of it, the server updates the report at once. Hibearnate then waits for its own quiet period before the laptop goes to Away. The dashboard cannot tell Hibearnate to go to Away.
+
+The server writes the report only on Windows, and only if the folder `%LOCALAPPDATA%\Hibearnate` exists. Hibearnate makes this folder when it starts for the first time. The server never makes it.
+
+To turn this off, set the environment variable `AGENT_STATUS_HIBEARNATE` to `0`, and then restart the server. The values `off` and `false` also turn it off.
+
+If you run a test copy of the server on a different port, turn this off for that copy. The copy reports the busy cards on its own board, and it can keep the laptop awake.
+
 ## Platform support
 
 Developed on **Windows 11**; the core board (hooks, CLI, columns, SSE, plans,
@@ -692,6 +712,7 @@ lib/skip-prompts.js  the skip list (commands that don't earn a card)
 lib/origin.js        the Origin + Host gate on every write
 lib/project-meta.js  checks for the edit dialog (name, links, keywords, note)
 lib/pending-ends.js  SessionEnd markers written when the server cannot take the end
+lib/hibearnate.js    the busy report for Hibearnate (Windows only)
 bin/status.js        the one CLI (hooks + Claude subcommands + ensure-server)
 public/              index.html, app.js, styles.css  (self-contained UI)
 examples/            hook config, CLAUDE.md block, /post-status command (setup)

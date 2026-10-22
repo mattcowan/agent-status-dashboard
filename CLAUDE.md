@@ -84,6 +84,23 @@ lib/pending-ends.js  durable SessionEnd markers (issue #32). The SessionEnd
                      them at boot and every minute, applying the hook's own
                      end time, and deletes a marker only after flushSync()
                      has put that end on disk.
+lib/hibearnate.js    the busy lease that tells Hibearnate (a Windows tray
+                     app, mattcowan/hibearnate) a session is working (issue
+                     #36). One file under %LOCALAPPDATA%\Hibearnate\leases\,
+                     renewed every minute while any card is busy and deleted
+                     when none is. Built only after listen() succeeds and
+                     named after the bound port (agent-dashboard-4787), so an
+                     EADDRINUSE loser has no lease and a server on another
+                     port has its own: neither can renew or delete the
+                     owner's. A fixed name let an idle scratch copy delete
+                     the live lease every minute. Off with
+                     AGENT_STATUS_HIBEARNATE=0. On
+                     EPERM it skips a renewal and never falls back to an
+                     in-place write the way atomicWrite does: Hibearnate has
+                     the file open with FileShare.Read while it reads it.
+                     The busy test mirrors Hibearnate's old board read
+                     (working, not ended, active within 6 h); change both
+                     together or the cut-over changes when laptops sleep.
 bin/status.js        the one CLI: hook subcommands, Claude subcommands,
                      ensure-server, session resolution
 public/index.html    markup for all three views (board/projects/archive)
@@ -161,7 +178,11 @@ npm test                           # node --test over test/
   process exit quietly, leaving the original owner of `data/board.json` in
   place. If a change seems not to have taken effect, check whether the old
   process is still the one on the port (`node bin/status.js ensure-server`
-  reports health, not identity — check `data/server.pid`).
+  reports health, not identity — check `data/server.pid`). An instance on
+  *another* port (a scratch copy under `PORT=4799`) is not harmless on
+  Windows: it writes its own Hibearnate lease (`agent-dashboard-4799`) from
+  its copied board, whose Working cards then keep the laptop awake until they
+  go stale. Start scratch copies with `AGENT_STATUS_HIBEARNATE=0`.
 - **Never hand-edit `data/board.json` while the server is up.** The in-memory
   board is authoritative and the next debounced save overwrites the file.
 - **Verifying in a browser touches real data.** The board shows real project
