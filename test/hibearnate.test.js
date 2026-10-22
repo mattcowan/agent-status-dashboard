@@ -7,6 +7,9 @@
 //   leaseDir()    the feature is Windows only and can be turned off; a wrong
 //                 answer either writes into a home folder on macOS or ignores
 //                 the user's opt-out.
+//   leaseName()   one name per port, inside Hibearnate's name rule, so a second
+//                 server (a scratch copy on another port) can never renew or
+//                 delete the live server's lease.
 //   isBusyCard()  must give the same answer Hibearnate's own board read gave,
 //                 or the cut-over silently changes when the laptop sleeps.
 //   Lease         the file contract Hibearnate parses (name, Until, temp file
@@ -26,6 +29,7 @@ const path = require('path');
 const hb = require('../lib/hibearnate');
 
 const NOW = Date.parse('2026-10-20T12:00:00.000Z');
+const NAME = hb.leaseName(4787);
 
 function tempAppData(withHibearnate) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'csd-hibearnate-'));
@@ -36,6 +40,7 @@ function tempAppData(withHibearnate) {
 function leaseFor(root, over) {
   return new hb.Lease(Object.assign({
     dir: path.join(root, 'Hibearnate', 'leases'),
+    name: NAME,
     now: () => NOW,
     log: () => { throw new Error('unexpected log'); },
   }, over || {}));
@@ -66,14 +71,32 @@ test('leaseDir is off outside Windows and without LOCALAPPDATA', () => {
   assert.strictEqual(hb.leaseDir({ LOCALAPPDATA: '' }, 'win32'), null);
 });
 
-test('leaseDir honours CLAUDE_STATUS_HIBEARNATE=0/off/false and nothing else', () => {
+test('leaseDir honors AGENT_STATUS_HIBEARNATE=0/off/false and nothing else', () => {
   const base = { LOCALAPPDATA: 'X' };
   for (const flag of ['0', 'off', 'OFF', ' false ']) {
-    assert.strictEqual(hb.leaseDir(Object.assign({ CLAUDE_STATUS_HIBEARNATE: flag }, base), 'win32'), null, flag);
+    assert.strictEqual(hb.leaseDir(Object.assign({ AGENT_STATUS_HIBEARNATE: flag }, base), 'win32'), null, flag);
   }
   const on = path.join('X', 'Hibearnate', 'leases');
   for (const flag of [undefined, '', '1', 'on', 'yes']) {
-    assert.strictEqual(hb.leaseDir(Object.assign({ CLAUDE_STATUS_HIBEARNATE: flag }, base), 'win32'), on, String(flag));
+    assert.strictEqual(hb.leaseDir(Object.assign({ AGENT_STATUS_HIBEARNATE: flag }, base), 'win32'), on, String(flag));
+  }
+});
+
+// ---------- leaseName ----------
+
+test('leaseName is one name per port, inside Hibearnate\'s name rule', () => {
+  assert.strictEqual(hb.leaseName(4787), 'agent-dashboard-4787');
+  assert.notStrictEqual(hb.leaseName(4787), hb.leaseName(4799));
+  // Hibearnate's rule: 1 to 24 of [A-Za-z0-9._-], letter or digit first. The
+  // longest name is the one for the largest port.
+  for (const port of [1, 4787, 65535]) {
+    assert.match(hb.leaseName(port), /^[A-Za-z0-9][A-Za-z0-9._-]{0,23}$/, String(port));
+  }
+});
+
+test('leaseName gives no name without a usable port', () => {
+  for (const port of [undefined, null, 0, -1, 65536, 4787.5, 'abc', '']) {
+    assert.strictEqual(hb.leaseName(port), null, String(port));
   }
 });
 
@@ -125,14 +148,30 @@ test('a busy sync writes the lease Hibearnate expects, with no temp file left', 
   const lease = leaseFor(root);
   lease.sync(true, false);
   assert.strictEqual(lease.held, true);
-  assert.strictEqual(path.basename(lease.file), hb.LEASE_NAME + '.json');
+  assert.strictEqual(path.basename(lease.file), NAME + '.json');
   assert.deepStrictEqual(readLease(lease), {
-    Name: hb.LEASE_NAME,
+    Name: NAME,
     Until: new Date(NOW + hb.LEASE_MS).toISOString(),
   });
-  assert.deepStrictEqual(fs.readdirSync(lease.dir), [hb.LEASE_NAME + '.json']);
-  // Hibearnate's rules for a name: 1 to 24 of [A-Za-z0-9._-], letter or digit first.
-  assert.match(hb.LEASE_NAME, /^[A-Za-z0-9][A-Za-z0-9._-]{0,23}$/);
+  // Hibearnate rejects a lease whose Name differs from the file name.
+  assert.deepStrictEqual(fs.readdirSync(lease.dir), [NAME + '.json']);
+});
+
+test('a second server on another port never touches the first one\'s lease', () => {
+  const root = tempAppData(true);
+  const live = leaseFor(root);
+  const scratch = leaseFor(root, { name: hb.leaseName(4799) });
+  live.sync(true, true);
+  // An idle scratch copy: its startup sync and its timer ticks both release.
+  scratch.sync(false, true);
+  scratch.sync(false, true);
+  assert.strictEqual(fs.existsSync(live.file), true, 'the live lease survives');
+  // A busy one writes its own file beside the live one, and its release on
+  // exit removes only that file.
+  scratch.sync(true, true);
+  assert.deepStrictEqual(fs.readdirSync(live.dir).sort(), [NAME + '.json', hb.leaseName(4799) + '.json'].sort());
+  scratch.release();
+  assert.deepStrictEqual(fs.readdirSync(live.dir), [NAME + '.json']);
 });
 
 test('without Hibearnate installed, nothing is created', () => {
@@ -171,7 +210,7 @@ test('a lease left by a crashed run is removed on the first idle sync', () => {
   const root = tempAppData(true);
   const dir = path.join(root, 'Hibearnate', 'leases');
   fs.mkdirSync(dir);
-  fs.writeFileSync(path.join(dir, hb.LEASE_NAME + '.json'), '{"Name":"' + hb.LEASE_NAME + '","Until":"2999-01-01T00:00:00Z"}');
+  fs.writeFileSync(path.join(dir, NAME + '.json'), '{"Name":"' + NAME + '","Until":"2999-01-01T00:00:00Z"}');
   const lease = leaseFor(root);
   assert.strictEqual(lease.held, null);
   lease.sync(false, false);
@@ -239,10 +278,21 @@ test('a lasting error is logged once per distinct message', () => {
 });
 
 test('a Lease without a folder does nothing', () => {
-  const lease = new hb.Lease({ dir: null });
+  const lease = new hb.Lease({ dir: null, name: NAME });
   lease.sync(true, true);
   lease.sync(false, true);
   lease.release();
   assert.strictEqual(lease.held, null);
   assert.strictEqual(lease.file, null);
+});
+
+test('a Lease without a name does nothing', () => {
+  const root = tempAppData(true);
+  const lease = leaseFor(root, { name: null });
+  lease.sync(true, true);
+  lease.sync(false, true);
+  lease.release();
+  assert.strictEqual(lease.held, null);
+  assert.strictEqual(lease.file, null);
+  assert.deepStrictEqual(fs.readdirSync(path.join(root, 'Hibearnate')), []);
 });

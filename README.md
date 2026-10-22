@@ -664,13 +664,15 @@ A session is busy when its card has all of these properties:
 - The session did not end.
 - The card has activity in the last 6 hours.
 
-While one or more cards are busy, the server keeps a busy report in `%LOCALAPPDATA%\Hibearnate\leases\claude-status-dashboard.json`. Each report has a time limit of 3 minutes. The server renews the report every minute. When no card is busy, the server deletes the report. It also deletes the report when it stops. If the server crashes, the report ends by itself after 3 minutes.
+While one or more cards are busy, the server keeps a busy report in `%LOCALAPPDATA%\Hibearnate\leases\agent-dashboard-<port>.json`. For the default port, the file is `agent-dashboard-4787.json`. Each server changes only the report for its own port. Each report has a time limit of 3 minutes. The server renews the report every minute. When no card is busy, the server deletes the report. It also deletes the report when it stops. If the server crashes, the report ends by itself after 3 minutes.
 
 When a card moves into Working or out of it, the server updates the report at once. Hibearnate then waits for its own quiet period before the laptop goes to Away. The dashboard cannot tell Hibearnate to go to Away.
 
 The server writes the report only on Windows, and only if the folder `%LOCALAPPDATA%\Hibearnate` exists. Hibearnate makes this folder when it starts for the first time. The server never makes it.
 
-To turn this off, set the environment variable `CLAUDE_STATUS_HIBEARNATE` to `0`, and then restart the server. The values `off` and `false` also turn it off.
+To turn this off, set the environment variable `AGENT_STATUS_HIBEARNATE` to `0`, and then restart the server. The values `off` and `false` also turn it off.
+
+If you run a test copy of the server on a different port, turn this off for that copy. The copy reports the busy cards on its own board, and it can keep the laptop awake.
 
 ## Platform support
 
