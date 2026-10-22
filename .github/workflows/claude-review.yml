@@ -10,8 +10,15 @@
 #
 # Only the owner can start a run. Before writing @claude on a pull request
 # from a fork, read the change first: Claude then reads code that someone else
-# wrote, and text in it can try to steer the review. The token is read-only,
-# which limits what a steered run can do, but its comments still post as Claude.
+# wrote, and text in it can try to steer the review. The app token cannot
+# write repo contents, which limits what a steered run can do. It can still
+# write PR and issue comments, and those post as Claude.
+#
+# On a pull request from a fork, ask with a top-level PR comment. GitHub runs
+# review and inline review comment events from a fork without secrets and
+# with a read-only GITHUB_TOKEN, whoever wrote the comment, so the action
+# could not sign in. The job skips those two events on a fork PR rather than
+# start a run that can only fail.
 #
 # Setup, one time:
 #   1. Run `claude setup-token` (works on Pro and Max) and copy the token.
@@ -40,9 +47,11 @@ jobs:
         contains(github.event.comment.body, '@claude') &&
         github.event.comment.author_association == 'OWNER') ||
       (github.event_name == 'pull_request_review_comment' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
         contains(github.event.comment.body, '@claude') &&
         github.event.comment.author_association == 'OWNER') ||
       (github.event_name == 'pull_request_review' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
         contains(github.event.review.body, '@claude') &&
         github.event.review.author_association == 'OWNER')
     # One run per PR at a time. A review whose body and N inline comments all
@@ -70,7 +79,7 @@ jobs:
         uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029 # v1.0.239
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Read-only. The action swaps the OIDC token for a Claude app token
+          # Read-only repo contents. The action swaps the OIDC token for a Claude app token
           # with contents: write by default, and on an open PR it pushes to the
           # PR branch. This lowers the app token to contents: read (merged over
           # the defaults), so a push fails whatever Claude tries.
@@ -82,6 +91,15 @@ jobs:
           # $GITHUB_ACTION_PATH/scripts/git-push.sh, which "git push" does not
           # match, so the wrapper gets its own rule; "*" may appear anywhere in
           # a Bash rule, and deny rules win over the action's allow list.
+          #
+          # A bare "@claude" gives the action no request: it passes only the
+          # text after the trigger phrase, and asks for review feedback only
+          # when that text asks for a review. The appended system prompt makes
+          # a review the default. Not the `prompt` input: on a comment event
+          # that switches the action to agent mode, which drops the action's
+          # own comment, the one the review is posted in.
           claude_args: >-
             --disallowedTools
             "Bash(git commit:*),Bash(git push:*),Bash(*scripts/git-push.sh*),Bash(git rm:*),mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files"
+            --append-system-prompt
+            "If the comment that mentions @claude asks for nothing after @claude, review this pull request and post the review in your comment."
