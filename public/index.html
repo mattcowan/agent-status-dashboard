@@ -128,6 +128,12 @@
          never torn down under the person using them. -->
     <div class="toolbar bulkbar hidden" id="bulkBar" role="region" aria-label="Selected cards">
       <span class="bulk-count" id="bulkCount">0 selected</span>
+      <!-- Issue #38: the per-card ✓ Mark done for the whole selection, so the
+           common clean-up (Session: Idle, Select all shown, untick the ones
+           still in use) is one press instead of a trip through Move to. Not
+           .primary like the card's button: .is-off would put muted text on
+           the accent fill whenever nothing is selected. -->
+      <button type="button" class="small" id="bulkDone" aria-disabled="true">✓ Mark done</button>
       <button type="button" class="small" id="bulkEnd" aria-disabled="true"
               title="Mark the selected sessions ended — for sessions that closed without their SessionEnd hook firing">Mark ended</button>
       <button type="button" class="small" id="bulkArchive" aria-disabled="true">Archive</button>

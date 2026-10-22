@@ -41,7 +41,7 @@ its project folder, git remote and branch, the model that did the work, and a
 | **Stop** hook (backstop) | If Claude left the card in *Working*, captures "where it left off" from the transcript, moves it to **Needs Input**, and flags it **⚙ auto-captured**. If the session is already **ended**, the card stays in *Working*, because an ended session does not wait for you. |
 | **PostToolUse(Edit\|Write)** hook | Any file edited *outside* the project folder is listed on the card (⚠ external edits). |
 | **SessionEnd** hook | Marks the session **ended** (live-dot turns grey). If the server is not running or returns an error, the hook leaves a marker file. The server applies the marker when it next starts. |
-| You, in the UI | **Mark done**, **Archive**, **Restore**, or **Delete**. Select several cards to mark them ended, archive them, or move them (see [Selecting cards](#selecting-cards)). |
+| You, in the UI | **Mark done**, **Archive**, **Restore**, or **Delete**. Select several cards to mark them done, mark them ended, archive them, or move them (see [Selecting cards](#selecting-cards)). |
 
 The **⚙ auto-captured** badge is the tell: it means the Stop backstop moved the
 card because Claude didn't declare an outcome — as opposed to a deliberate
@@ -433,12 +433,16 @@ then shows a checkbox, and a bar under the toolbar shows these actions:
 
 | Action | What it does |
 |---|---|
+| **✓ Mark done** | Moves the cards to **Done**, the same as each card's **✓ Mark done** button. If **Show done** is off, the cards then leave the board and the selection. |
 | **Mark ended** | Marks the sessions **ended**. Use this for sessions that closed without their `SessionEnd` hook. The cards stay in their columns. The tooltip on the badge says *Marked ended from the dashboard*. |
 | **Archive** | Moves the cards to the Archive, the same as each card's **Archive** button. |
 | **Move to … → Move** | Moves the cards to the column you choose, the same as a drag. You can choose **Done**. |
 | **Select all shown** | Selects every card that the board shows now. |
 | **Clear** | Clears the selection. |
 
+- The count says how many cards are selected and how many the board shows,
+  for example *3 of 12 selected*. **Select all shown** selects the second
+  number.
 - The selection holds only cards that the board shows. If a filter hides a
   selected card, or the card leaves the board, it is removed from the
   selection. An action never changes a card that you cannot see.
