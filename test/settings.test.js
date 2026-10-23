@@ -81,6 +81,12 @@ test('the dialog choices are the ones the server keeps', () => {
   // public/app.js mirrors the list; a drift there is caught by reading it.
   const app = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'app.js'), 'utf8');
   assert.match(app, /const FRESH_CHOICES = \[30, 60, 120, 180, 360, 720, 1440\];/);
+  // The dialog's default must be the server's: watchedWindows() leaves a
+  // column at FRESH_DEFAULT out of the saved map, so a drift here would turn
+  // a picked window into the server's other default without a word.
+  const fresh = require('../lib/hibearnate').FRESH_MS / 60000;
+  assert.ok(s.FRESH_CHOICES.includes(fresh), 'the default must be one of the choices');
+  assert.ok(app.includes('const FRESH_DEFAULT = ' + fresh + ';'), 'public/app.js FRESH_DEFAULT must equal FRESH_MS in minutes (' + fresh + ')');
 });
 
 test('the other settings still merge as before', () => {
