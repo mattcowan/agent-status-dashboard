@@ -3,6 +3,10 @@
 const state = {
   cards: [],
   columns: [],   // [{key,label,kind,color}] from the server
+  // [{key, freshMinutes}] for the columns whose cards keep the laptop awake
+  // through Hibearnate (issue #42). Empty when no lease can reach Hibearnate,
+  // so the header mark only appears where it is true.
+  keepAwake: [],
   project: '',
   // The "All matching …" choice in the Project filter: a substring, not a
   // path, stored as typed (for display) and folded at every comparison by
@@ -373,6 +377,7 @@ async function refresh() {
   const data = (await api('GET', '/api/board' + q)).json;
   state.cards = (data && data.cards) || [];
   state.columns = (data && data.columns) || [];
+  state.keepAwake = (data && Array.isArray(data.keepAwake)) ? data.keepAwake : [];
   // Whole-store totals for the tab labels. Kept on a failed fetch rather than
   // zeroed, so a hiccup doesn't blink the counts to nothing.
   if (data && data.counts) state.counts = data.counts;
@@ -1901,9 +1906,26 @@ function columnHead(col, count, index, visibleKeys) {
       }, ['Dump → archive'])
     : null;
 
+  // The keep-awake mark (issue #42): this column's recent cards keep the
+  // laptop awake through Hibearnate. The glyph is decoration; the words are in
+  // a visually hidden span next to the label, so a screen reader hears them
+  // as part of the column name, and in the title for a mouse user. A header
+  // is not focusable, so a title alone would reach nobody else.
+  const awake = state.keepAwake.find((k) => k.key === col.key);
+  const awakeText = awake
+    ? 'Keeps the laptop awake: a card with activity in the last ' + formatWindow(awake.freshMinutes)
+    : '';
+  const awakeMark = awake
+    ? el('span', { class: 'col-awake', title: awakeText }, [
+        el('span', { 'aria-hidden': 'true', text: '☕' }),
+        el('span', { class: 'visually-hidden', text: ' (' + awakeText + ')' }),
+      ])
+    : null;
+
   return el('div', { class: 'col-head' }, [
     el('span', { class: 'swatch', style: 'background:' + col.color }, []),
     el('span', { class: 'col-label', text: col.label }, []),
+    awakeMark,
     el('span', { class: 'count', text: String(count) }, []),
     doneArchive,
     controls,
@@ -2546,12 +2568,21 @@ function renderUsage() {
 // strip is hidden until usage data exists, so it cannot be the only door.
 //
 // The form is filled from a fresh GET on every open rather than from a cached
-// copy, so a change saved from another tab is what this one shows.
+// copy, so a change saved from another tab (or, for the watched columns, from
+// Hibearnate's tray menu) is what this one shows. The columns are read fresh
+// too, not taken from state.columns, so the list and the ticks come from the
+// same moment.
 async function openSettings() {
   const dlg = document.getElementById('settingsDialog');
   if (dlg.open) return;
-  const r = await api('GET', '/api/settings');
+  const [r, rc] = await Promise.all([api('GET', '/api/settings'), api('GET', '/api/columns')]);
   const cur = (r.ok && r.json) || {};
+  const columns = (rc.ok && rc.json && rc.json.columns) || state.columns;
+  // The same fallback as the poll settings below: with no stored answer, show
+  // the server's default (Working only), not an empty list that a Save would
+  // then write as "never keep the laptop awake".
+  const hb = cur.hibearnate && Array.isArray(cur.hibearnate.columns) ? cur.hibearnate.columns : ['working'];
+  renderWatchedColumns(columns, hb, cur.hibearnate && cur.hibearnate.freshMinutes);
   const poll = cur.usagePoll || { enabled: false, intervalMs: 600000 };
   const selfEnd = cur.selfEnd || { enabled: false };
   document.getElementById('settingSelfEnd').checked = !!selfEnd.enabled;
@@ -2563,6 +2594,72 @@ async function openSettings() {
   if (!interval.value) interval.value = '600000';
   document.getElementById('settingsError').textContent = '';
   dlg.showModal();
+}
+
+// The freshness windows the dialog offers, in minutes, and the default for a
+// column with none stored. MIRRORED from lib/settings.js FRESH_CHOICES and
+// lib/hibearnate.js FRESH_MS: the server drops any other value, so an option
+// added only here would be saved as "default" without a word.
+const FRESH_CHOICES = [30, 60, 120, 180, 360, 720, 1440];
+const FRESH_DEFAULT = 360;
+
+function formatWindow(minutes) {
+  if (minutes < 60) return minutes + ' minutes';
+  const h = minutes / 60;
+  return h === 1 ? '1 hour' : h + ' hours';
+}
+
+// The watched-column rows (issue #42): every column but Done, in board order,
+// each with a checkbox (ticked when its key is in the stored list) and the
+// window a card's last activity must fall in. Built only when the dialog
+// opens, never by render(), so a board refresh cannot rebuild the list under
+// a user who is ticking it. The column key rides on the inputs' data, and
+// the label is text only (el() sets it with textContent).
+//
+// The select is disabled while its column is unticked: its value is kept and
+// saved, but it does nothing then, and an enabled control that does nothing
+// is a question nobody can answer by looking.
+function renderWatchedColumns(columns, watched, freshMinutes) {
+  const box = document.getElementById('settingHibearnateColumns');
+  const keys = new Set(watched);
+  const fresh = freshMinutes || {};
+  box.replaceChildren(...columns
+    .filter((c) => c.kind !== 'done')
+    .map((c) => {
+      const on = keys.has(c.key);
+      const stored = FRESH_CHOICES.includes(fresh[c.key]) ? fresh[c.key] : FRESH_DEFAULT;
+      const sel = el('select', {
+        class: 'st-window',
+        'data-key': c.key,
+        'aria-label': 'Activity window for ' + c.label,
+        disabled: on ? null : '',
+      }, FRESH_CHOICES.map((m) => el('option', { value: String(m), selected: m === stored ? '' : null, text: 'Last ' + formatWindow(m) })));
+      const tick = el('input', {
+        type: 'checkbox', name: 'hibearnateColumn', value: c.key, checked: on ? '' : null,
+        onchange: (e) => { sel.disabled = !e.target.checked; },
+      });
+      return el('div', { class: 'st-col-row' }, [
+        el('label', { class: 'st-check' }, [tick, el('span', { text: c.label })]),
+        sel,
+      ]);
+    }));
+}
+
+function checkedWatchedColumns() {
+  return Array.from(document.querySelectorAll('#settingHibearnateColumns input[name="hibearnateColumn"]'))
+    .filter((i) => i.checked)
+    .map((i) => i.value);
+}
+
+// Only windows that differ from the default are stored, so data/settings.json
+// names the columns the user actually changed.
+function watchedWindows() {
+  const out = {};
+  for (const sel of document.querySelectorAll('#settingHibearnateColumns select.st-window')) {
+    const m = parseInt(sel.value, 10);
+    if (m !== FRESH_DEFAULT) out[sel.dataset.key] = m;
+  }
+  return out;
 }
 
 (function wireSettingsDialog() {
@@ -2579,12 +2676,16 @@ async function openSettings() {
         intervalMs: parseInt(document.getElementById('settingUsageInterval').value, 10),
       },
       selfEnd: { enabled: document.getElementById('settingSelfEnd').checked },
+      hibearnate: { columns: checkedWatchedColumns(), freshMinutes: watchedWindows() },
     });
     if (!r.ok) {
       err.textContent = 'Could not save the settings' + (r.json && r.json.error ? ': ' + r.json.error : '.');
       return;
     }
     dlg.close();
+    // The keep-awake marks in the column headers follow the saved setting.
+    // The server also pushes an SSE event, but this tab need not wait for it.
+    refresh();
   });
   // The ⚙ in the usage strip is rebuilt on every usage render, so the
   // browser's own focus return lands on a detached node; fall back to the

@@ -1033,6 +1033,20 @@ a.badge.branch:hover { border-color: var(--accent-plain); background: var(--pane
 .st-check input:focus-visible,
 .st-row select:focus-visible { outline: 2px solid var(--accent-plain); outline-offset: 2px; }
 .st-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+/* The watched-column list (issue #42): one checkbox per line, so a long
+   custom label wraps under its own box instead of beside its neighbor's. */
+.st-columns { display: flex; flex-direction: column; gap: 6px; }
+.st-columns .st-check span { overflow-wrap: anywhere; }
+/* Checkbox left, its activity window right; the select wraps under the label
+   in a narrow dialog rather than squeezing it. */
+.st-col-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; }
+.st-col-row .st-check { flex: 1 1 10em; min-width: 0; }
+.st-col-row select { font-size: 12.5px; }
+.st-col-row select:disabled { opacity: 0.55; }
+.st-col-row select:focus-visible { outline: 2px solid var(--accent-plain); outline-offset: 2px; }
+/* The keep-awake mark in a watched column's header (issue #42). flex: none,
+   so the label's ellipsis eats the space before the mark does. */
+.col-head .col-awake { flex: none; font-size: 14px; line-height: 1; cursor: help; }
 .st-group code { font-size: 12px; }
 .pe-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .pe-actions button:focus-visible { outline: 2px solid var(--accent-plain); outline-offset: 2px; }
