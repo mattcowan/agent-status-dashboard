@@ -2212,13 +2212,17 @@ function syncBulkBar() {
   toggle.textContent = state.selecting ? '☑ Selecting' : '☐ Select';
   if (!state.selecting) return;
 
+  // "3 of 12 selected" (issue #38): the second number is what Select all
+  // shown would take, so the filters can be checked before the press rather
+  // than after it. shownCardIds is the same list the prune in render() keeps
+  // the selection inside, so n can never exceed it.
   const n = state.selected.size;
   const count = document.getElementById('bulkCount');
-  const text = n + ' selected';
+  const text = n + ' of ' + shownCardIds.length + ' selected';
   if (count.textContent !== text) count.textContent = text;
   // aria-disabled, not disabled, for the reason #resetFilters gives: a button
   // that goes disabled under the press that emptied the selection drops focus.
-  ['bulkEnd', 'bulkArchive', 'bulkMove', 'bulkClear'].forEach((id) => {
+  ['bulkDone', 'bulkEnd', 'bulkArchive', 'bulkMove', 'bulkClear'].forEach((id) => {
     const b = document.getElementById(id);
     b.setAttribute('aria-disabled', n ? 'false' : 'true');
     b.classList.toggle('is-off', !n);
@@ -2243,11 +2247,15 @@ function plural(n, one) { return n + ' ' + one + (n === 1 ? '' : 's'); }
 // Run one bulk action on the selection and say what happened, including the
 // parts that did not: a card already ended, or one that left the board between
 // the click and the request (another tab archived it).
-async function bulkAct(action) {
+//
+// `column` is for a move that names its own target — Mark done (issue #38) —
+// so it never depends on whatever the Move to list happens to hold. Without
+// it, a move reads the list, which is what the Move button means.
+async function bulkAct(action, column) {
   const ids = Array.from(state.selected);
   if (!ids.length) { bulkSay('Select one or more cards first.'); return; }
   const body = { ids: ids, action: action };
-  if (action === 'move') body.column = document.getElementById('bulkColumn').value;
+  if (action === 'move') body.column = column || document.getElementById('bulkColumn').value;
   const r = await api('POST', '/api/bulk', body);
   if (!r.ok || !r.json) {
     bulkSay('Nothing changed: ' + ((r.json && r.json.error) || 'the request failed') + '.');
@@ -2955,6 +2963,19 @@ document.getElementById('archiveDone').addEventListener('click', archiveDone);
 // Selection mode (issue #34). The aria-disabled buttons no-op through
 // bulkAct()'s empty-selection check, which also says why in the live region.
 document.getElementById('selectToggle').addEventListener('click', () => setSelecting(!state.selecting));
+// Mark done is a bulk move to the Done column, found by kind as archiveDone()
+// finds it rather than by its 'done' key. No server route of its own: the
+// per-card button's /done is moveCard(id, 'done', false), which is exactly what
+// Store.bulk() does for each id, and /api/bulk already passes the write gate.
+// The result line is the Move one ("Moved 5 cards to Done (2 already there)."),
+// and with Show done off the prune in render() keeps it when the moved cards
+// drop out of the selection.
+document.getElementById('bulkDone').addEventListener('click', () => {
+  if (!state.selected.size) { bulkSay('Select one or more cards first.'); return; }
+  const doneCol = state.columns.find((c) => c.kind === 'done');
+  if (!doneCol) { bulkSay('Nothing changed: this board has no Done column.'); return; }
+  bulkAct('move', doneCol.key);
+});
 document.getElementById('bulkEnd').addEventListener('click', () => bulkAct('end'));
 document.getElementById('bulkArchive').addEventListener('click', () => bulkAct('archive'));
 document.getElementById('bulkMove').addEventListener('click', () => bulkAct('move'));

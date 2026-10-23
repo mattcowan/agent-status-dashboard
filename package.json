@@ -1,6 +1,6 @@
 {
   "name": "claude-status-dashboard",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Local Kanban dashboard tracking the status of every Claude Code session.",
   "license": "MIT",
   "author": "Matthew Neil Cowan",
