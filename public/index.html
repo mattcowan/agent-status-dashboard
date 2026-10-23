@@ -295,6 +295,15 @@
         <p class="pe-hint" id="settingUsagePollHint">Usage refreshes when a session contacts the dashboard, and when you press ↻. Background polling also reads the (undocumented) usage endpoint on a timer when no session is active.</p>
       </fieldset>
 
+      <!-- Issue #42. One checkbox per column in board order, Done left out,
+           built by openSettings() from a fresh /api/columns read. The same
+           setting is edited from Hibearnate's tray menu. -->
+      <fieldset class="st-group" id="settingHibearnate" aria-describedby="settingHibearnateHint">
+        <legend>Keep the laptop awake (Hibearnate)</legend>
+        <div class="st-columns" id="settingHibearnateColumns"></div>
+        <p class="pe-hint" id="settingHibearnateHint">A card in a ticked column tells Hibearnate that a session is busy, while its last activity is in the time next to the column. When no column is ticked, the dashboard never keeps the laptop awake. A watched column shows ☕ in its header. Windows only.</p>
+      </fieldset>
+
       <!-- Same alert region as the project editor's: a failed save must be
            heard while focus stays on Save. -->
       <p class="pe-error" id="settingsError" role="alert"></p>

@@ -664,19 +664,46 @@ clearing an edit restores what each card showed before. The edits are kept in
 
 A session is busy when its card has all of these properties:
 
-- The card is in the **Working** column.
+- The card is in a watched column. By default, only **Working** is watched.
+- The card is not archived.
 - The session did not end.
-- The card has activity in the last 6 hours.
+- The card has activity in the activity window of its column. The default window is 6 hours.
+
+To change the watched columns, see [Choose the watched columns](#choose-the-watched-columns).
 
 While one or more cards are busy, the server keeps a busy report in `%LOCALAPPDATA%\Hibearnate\leases\agent-dashboard-<port>.json`. For the default port, the file is `agent-dashboard-4787.json`. Each server changes only the report for its own port. Each report has a time limit of 3 minutes. The server renews the report every minute. When no card is busy, the server deletes the report. It also deletes the report when it stops. If the server crashes, the report ends by itself after 3 minutes.
 
-When a card moves into Working or out of it, the server updates the report at once. Hibearnate then waits for its own quiet period before the laptop goes to Away. The dashboard cannot tell Hibearnate to go to Away.
+When a card moves into a watched column or out of it, the server updates the report at once. Hibearnate then waits for its own quiet period before the laptop goes to Away. The dashboard cannot tell Hibearnate to go to Away.
 
 The server writes the report only on Windows, and only if the folder `%LOCALAPPDATA%\Hibearnate` exists. Hibearnate makes this folder when it starts for the first time. The server never makes it.
 
 To turn this off, set the environment variable `AGENT_STATUS_HIBEARNATE` to `0`, and then restart the server. The values `off` and `false` also turn it off.
 
 If you run a test copy of the server on a different port, turn this off for that copy. The copy reports the busy cards on its own board, and it can keep the laptop awake.
+
+### Choose the watched columns
+
+Open **⚙ Settings**. Under **Keep the laptop awake (Hibearnate)**, tick each column that counts as busy. The list shows all columns in board order. **Done** is not in the list, and a card in **Done** is never busy.
+
+Next to each column, select its activity window: 30 minutes, or 1, 2, 3, 6, 12 or 24 hours. A card counts as busy only while its last activity is in this window. The default is 6 hours. The window has an effect only when the column is ticked.
+
+Then click **Save**. The server updates the busy report at once.
+
+A watched column shows ☕ in its header. Hold the pointer on ☕ to see the window. The mark shows only when the server can write the busy report: on Windows, with Hibearnate installed, and with the report not turned off.
+
+Hibearnate can also change this setting from its tray menu. Both places change the same setting, in `data/settings.json`.
+
+- If no column is ticked, the server never keeps a busy report.
+- If you rename a column, it stays watched.
+- If you delete a column, it is removed from the setting, with its window. A new column with the same name is not watched until you tick it.
+
+No hook moves a card out of a custom column. If you watch a custom column, such as **Merging**, a card that you forget there keeps the laptop awake until its window ends. Give a custom column a short window, for example 1 hour. Hibearnate's own limit also stops Auto after 3 hours at a time.
+
+Programs can read and change the setting through the API. `GET /api/settings` returns the watched keys in `hibearnate.columns`, and the windows in `hibearnate.freshMinutes`. `POST /api/settings` with `{"hibearnate":{"columns":["working","merging"]}}` replaces the list and keeps the windows. Send the full list. Use the column keys from `GET /api/columns`, not the labels. The server removes keys that are not current columns, and the `done` key. The response shows the saved list. A value that is not a list of strings gives status 400.
+
+To change the windows, send `"freshMinutes":{"merging":60}` in the same `hibearnate` object. This replaces all windows. The values are minutes: 30, 60, 120, 180, 360, 720 or 1440. A column that is not in the object uses 6 hours. The server removes other values, and keys that are not current columns. A value that is not an object gives status 400.
+
+`GET /api/board` also returns `keepAwake`: the watched columns, each with its window in minutes. The list is empty when the server cannot write the busy report.
 
 ## Platform support
 

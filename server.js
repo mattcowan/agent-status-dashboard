@@ -137,6 +137,11 @@ async function handleApi(req, res, pathname, query) {
       // Whole-store totals for the view tabs, so the Archive and Projects tabs
       // can show a count without the board fetching either view.
       counts: store.counts(),
+      // The columns that keep the laptop awake, for the header mark (issue
+      // #42). Empty unless the lease can really reach Hibearnate, so the mark
+      // never claims an effect that is not there. Filtered against the board,
+      // like the lease itself (keepAwakeColumns()).
+      keepAwake: keepAwakeColumns(),
     });
   }
   if (method === 'GET' && pathname === '/api/columns') {
@@ -269,8 +274,43 @@ async function handleApi(req, res, pathname, query) {
   }
   if (method === 'POST' && pathname === '/api/settings') {
     const body = await readBody(req);
+    // The watched columns (issue #42) are the one setting a non-browser client
+    // writes: Hibearnate's tray menu POSTs the whole list. A list that is not
+    // an array of strings is refused rather than merged, so that client sees
+    // a failed save instead of a silent reset to the default. Keys that are
+    // well formed but name no current column, or name Done, are dropped: the
+    // likely cause is a column deleted between the menu opening and the
+    // click, and the response carries what was actually saved.
+    //
+    // The per-column windows (freshMinutes) get the same treatment: a value
+    // that is not an object is refused, and entries for columns that do not
+    // exist, or with a window the dialog does not offer, are dropped.
+    const hb = body && body.hibearnate;
+    if (hb && typeof hb === 'object') {
+      const next = Object.assign({}, hb);
+      const columns = store.listColumns();
+      if ('columns' in hb) {
+        const keys = Array.isArray(hb.columns) && hb.columns.every((k) => typeof k === 'string')
+          ? settings.cleanColumnKeys(hb.columns)
+          : null;
+        if (keys === null) return sendJson(res, 400, { error: 'hibearnate.columns must be an array of column keys' });
+        next.columns = hibearnate.watchedColumns(keys, columns);
+      }
+      if ('freshMinutes' in hb) {
+        const fresh = settings.cleanFreshMinutes(hb.freshMinutes);
+        if (fresh === null) return sendJson(res, 400, { error: 'hibearnate.freshMinutes must be an object of column key to minutes' });
+        next.freshMinutes = onlyColumns(fresh, columns);
+      }
+      body.hibearnate = next;
+    }
     const merged = settings.updateSettings(body);
     applyUsagePollTimer();
+    // At once, not at the next renewal tick: un-ticking the only busy column
+    // should release the lease now, and ticking one should take it now.
+    syncBusyLease(false);
+    // Open boards redraw their keep-awake marks. The settings are not part
+    // of the store, so no store 'change' fires for them on its own.
+    sseBroadcast('event: changed\ndata: {}\n\n');
     return sendJson(res, 200, merged);
   }
 
@@ -308,6 +348,7 @@ async function handleApi(req, res, pathname, query) {
         return sendJson(res, 409, { needsChoice: true, count: result.count });
       }
       if (!result.ok) return sendJson(res, 400, { error: result.error || 'delete failed' });
+      pruneWatchedColumns();
       return sendJson(res, 200, { ok: true, columns: store.listColumns() });
     }
   }
@@ -514,6 +555,7 @@ server.listen(PORT, config.HOST, () => {
   setImmediate(backfillRepoUrls);
   setImmediate(drainPendingEnds);
   applyUsagePollTimer();
+  pruneWatchedColumns();
   startBusyLease();
 });
 
@@ -524,11 +566,57 @@ server.listen(PORT, config.HOST, () => {
 // at all; one on another port (a scratch copy under PORT=4799) has a lease of
 // its own and cannot touch this one. The first sync is a renewal so that a
 // lease a crashed run on this port left behind is corrected at once.
+//
+// The watched columns are filtered against the board on every sync (see
+// hibearnate.watchedColumns), so the stored setting alone can never make the
+// lease hold for a column that no longer exists or for Done.
 let busyLease = null;
 function syncBusyLease(renew) {
+  if (!busyLease) return; // off (not Windows, opted out) or not listening yet
   try {
-    busyLease.sync(hibearnate.anyBusy(store.listCards(null), Date.now()), renew);
+    const rules = hibearnate.busyRules(settings.getSettings().hibearnate, store.listColumns());
+    busyLease.sync(hibearnate.anyBusy(store.listCards(null), Date.now(), rules), renew);
   } catch (_) { /* best effort: a lease must never take the server down */ }
+}
+
+// [{ key, freshMinutes }] for each column whose cards keep the laptop awake,
+// in board order, or [] when no lease can reach Hibearnate (see
+// Lease.available()). The board's header mark reads this.
+function keepAwakeColumns() {
+  try {
+    if (!busyLease || !busyLease.available()) return [];
+    const rules = hibearnate.busyRules(settings.getSettings().hibearnate, store.listColumns());
+    return Array.from(rules, ([key, ms]) => ({ key: key, freshMinutes: Math.round(ms / 60000) }));
+  } catch (_) {
+    return [];
+  }
+}
+
+// The entries of a { columnKey: value } map whose key is a current column
+// other than Done.
+function onlyColumns(map, columns) {
+  const out = {};
+  for (const key of hibearnate.watchedColumns(Object.keys(map), columns)) out[key] = map[key];
+  return out;
+}
+
+// Drop watched-column keys and windows that name no current column (issue
+// #42). The use-time filter above already ignores them; this removes them
+// from data/settings.json too, so a column deleted today does not come back
+// as watched, or with its old window, when a column with the same label (and
+// so the same slugified key) is added next week. Run after a column delete
+// and once at boot, which catches a board that changed while this server was
+// down.
+function pruneWatchedColumns() {
+  try {
+    const hb = settings.getSettings().hibearnate;
+    const columns = store.listColumns();
+    const kept = hibearnate.watchedColumns(hb.columns, columns);
+    const fresh = onlyColumns(hb.freshMinutes, columns);
+    if (kept.length !== hb.columns.length || Object.keys(fresh).length !== Object.keys(hb.freshMinutes).length) {
+      settings.updateSettings({ hibearnate: { columns: kept, freshMinutes: fresh } });
+    }
+  } catch (_) { /* best effort: the use-time filter still holds */ }
 }
 function startBusyLease() {
   const dir = hibearnate.leaseDir(process.env, process.platform);

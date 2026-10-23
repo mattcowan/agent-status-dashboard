@@ -10,8 +10,12 @@
 //   leaseName()   one name per port, inside Hibearnate's name rule, so a second
 //                 server (a scratch copy on another port) can never renew or
 //                 delete the live server's lease.
-//   isBusyCard()  must give the same answer Hibearnate's own board read gave,
-//                 or the cut-over silently changes when the laptop sleeps.
+//   isBusyCard()  with the default setting, must give the same answer
+//                 Hibearnate's own board read gave, or the cut-over silently
+//                 changes when the laptop sleeps.
+//   watched       the columns setting (issue #42): a custom column can count,
+//                 Working can stop counting, Done never counts, and a deleted
+//                 column's key stops counting at once, whatever is stored.
 //   Lease         the file contract Hibearnate parses (name, Until, temp file
 //                 that does not end in .json), never creating Hibearnate's
 //                 folder, and the EPERM rule: skip a renewal, never fall back
@@ -138,6 +142,110 @@ test('anyBusy needs only one busy card', () => {
   assert.strictEqual(hb.anyBusy([card({ column: 'review' }), card()], NOW), true);
   assert.strictEqual(hb.anyBusy([card({ column: 'review' })], NOW), false);
   assert.strictEqual(hb.anyBusy([], NOW), false);
+});
+
+// ---------- watched columns (issue #42) ----------
+
+// The default board plus one custom column, in board order.
+const COLUMNS = [
+  { key: 'working', label: 'Working', kind: 'root' },
+  { key: 'needs_input', label: 'Needs Input', kind: 'root' },
+  { key: 'merging', label: 'Merging', kind: 'custom' },
+  { key: 'task_completed', label: 'Ready for Review', kind: 'root' },
+  { key: 'done', label: 'Done', kind: 'done' },
+];
+
+function watched(keys, columns) {
+  return new Set(hb.watchedColumns(keys, columns || COLUMNS));
+}
+
+test('watched: a fresh card in a watched custom column is busy', () => {
+  const set = watched(['working', 'merging']);
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging' }), NOW, set), true);
+  assert.strictEqual(hb.anyBusy([card({ column: 'needs_input' }), card({ column: 'merging' })], NOW, set), true);
+  // The other rules still apply in a custom column.
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging', sessionEndedAt: '2026-10-20T11:00:00Z' }), NOW, set), false);
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging', archivedAt: '2026-10-20T11:00:00Z' }), NOW, set), false);
+  const stale = new Date(NOW - hb.FRESH_MS - 1000).toISOString();
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging', lastActiveAt: stale }), NOW, set), false);
+});
+
+test('watched: Working is not busy when it is not watched', () => {
+  const set = watched(['merging']);
+  assert.strictEqual(hb.isBusyCard(card({ column: 'working' }), NOW, set), false);
+  assert.strictEqual(hb.anyBusy([card({ column: 'working' })], NOW, set), false);
+});
+
+test('watched: an empty list means no card is ever busy', () => {
+  const set = watched([]);
+  assert.strictEqual(set.size, 0);
+  assert.strictEqual(hb.anyBusy([card(), card({ column: 'merging' })], NOW, set), false);
+});
+
+test('watched: left out, the default is Working only (the rule before #42)', () => {
+  assert.deepStrictEqual(hb.DEFAULT_WATCHED, ['working']);
+  assert.strictEqual(hb.isBusyCard(card(), NOW), true);
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging' }), NOW), false);
+});
+
+test('watched: Done never counts, also when the stored setting names it', () => {
+  assert.deepStrictEqual(hb.watchedColumns(['done', 'working'], COLUMNS), ['working']);
+  // A caller that builds its own Set is refused too.
+  assert.strictEqual(hb.isBusyCard(card({ column: 'done' }), NOW, new Set(['done'])), false);
+});
+
+test('watched: a deleted column key stops counting, and a reused key needs a new tick', () => {
+  const withoutMerging = COLUMNS.filter((c) => c.key !== 'merging');
+  // Stored setting still names it; the board no longer has it.
+  const set = watched(['working', 'merging'], withoutMerging);
+  assert.deepStrictEqual(Array.from(set), ['working']);
+  // A card left with the old key (hand-edited board) is not busy.
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging' }), NOW, set), false);
+});
+
+test('watched: keys come back in board order, renamed columns stay, junk is dropped', () => {
+  const renamed = COLUMNS.map((c) => (c.key === 'merging' ? Object.assign({}, c, { label: 'Waiting on CI' }) : c));
+  assert.deepStrictEqual(hb.watchedColumns(['merging', 'working'], renamed), ['working', 'merging']);
+  assert.deepStrictEqual(hb.watchedColumns(['nope', 42, null, 'working'], COLUMNS), ['working']);
+  assert.deepStrictEqual(hb.watchedColumns('working', COLUMNS), []);
+  assert.deepStrictEqual(hb.watchedColumns(null, COLUMNS), []);
+});
+
+// ---------- per-column windows (issue #42) ----------
+
+const MIN = 60 * 1000;
+
+test('busyRules: each watched column gets its window, the rest the default', () => {
+  const rules = hb.busyRules({ columns: ['working', 'merging'], freshMinutes: { merging: 60 } }, COLUMNS);
+  assert.deepStrictEqual(Array.from(rules), [['working', hb.FRESH_MS], ['merging', 60 * MIN]]);
+});
+
+test('busyRules: a window for an unwatched, deleted or Done column adds nothing', () => {
+  const rules = hb.busyRules({ columns: ['working'], freshMinutes: { merging: 60, gone: 30, done: 30 } }, COLUMNS);
+  assert.deepStrictEqual(Array.from(rules.keys()), ['working']);
+});
+
+test('busyRules: a junk window falls back to the default, never to "always busy"', () => {
+  for (const bad of [0, -5, 'soon', null, NaN, Infinity]) {
+    const rules = hb.busyRules({ columns: ['merging'], freshMinutes: { merging: bad } }, COLUMNS);
+    assert.strictEqual(rules.get('merging'), hb.FRESH_MS, String(bad));
+  }
+  assert.strictEqual(hb.busyRules({ columns: ['merging'], freshMinutes: null }, COLUMNS).get('merging'), hb.FRESH_MS);
+  assert.strictEqual(hb.busyRules(null, COLUMNS).size, 0);
+});
+
+test('isBusyCard: a short window ends a forgotten card in a custom column', () => {
+  const rules = hb.busyRules({ columns: ['working', 'merging'], freshMinutes: { merging: 60 } }, COLUMNS);
+  const ninetyAgo = new Date(NOW - 90 * MIN).toISOString();
+  const thirtyAgo = new Date(NOW - 30 * MIN).toISOString();
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging', lastActiveAt: thirtyAgo }), NOW, rules), true);
+  assert.strictEqual(hb.isBusyCard(card({ column: 'merging', lastActiveAt: ninetyAgo }), NOW, rules), false);
+  // Working keeps the six-hour default in the same setting.
+  assert.strictEqual(hb.isBusyCard(card({ column: 'working', lastActiveAt: ninetyAgo }), NOW, rules), true);
+});
+
+test('isBusyCard: a Map without a window for the column is not busy', () => {
+  assert.strictEqual(hb.isBusyCard(card(), NOW, new Map([['working', undefined]])), false);
   assert.strictEqual(hb.anyBusy(null, NOW), false);
 });
 
@@ -295,4 +403,13 @@ test('a Lease without a name does nothing', () => {
   assert.strictEqual(lease.held, null);
   assert.strictEqual(lease.file, null);
   assert.deepStrictEqual(fs.readdirSync(path.join(root, 'Hibearnate')), []);
+});
+
+test('available() is true only with a name and Hibearnate\'s folder, and creates nothing', () => {
+  const installed = tempAppData(true);
+  assert.strictEqual(leaseFor(installed).available(), true);
+  assert.strictEqual(leaseFor(installed, { name: null }).available(), false);
+  const absent = tempAppData(false);
+  assert.strictEqual(leaseFor(absent).available(), false);
+  assert.deepStrictEqual(fs.readdirSync(absent), []);
 });

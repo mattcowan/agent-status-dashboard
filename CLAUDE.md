@@ -98,9 +98,30 @@ lib/hibearnate.js    the busy lease that tells Hibearnate (a Windows tray
                      EPERM it skips a renewal and never falls back to an
                      in-place write the way atomicWrite does: Hibearnate has
                      the file open with FileShare.Read while it reads it.
-                     The busy test mirrors Hibearnate's old board read
-                     (working, not ended, active within 6 h); change both
-                     together or the cut-over changes when laptops sleep.
+                     The busy test is a card in a WATCHED column, not
+                     archived, not ended, active within that column's
+                     window (issue #42). The watched columns and windows
+                     are settings (settings.hibearnate.columns, default
+                     ['working'], and .freshMinutes, default 6 h for a
+                     column with no entry: together Hibearnate's old board
+                     read, so the #36 cut-over changed nothing).
+                     hibearnate.busyRules() turns them into a Map of key
+                     -> window ms. Hibearnate's tray menu
+                     (mattcowan/hibearnate#12) writes the columns only,
+                     through POST /api/settings with the whole list; the
+                     one-level merge keeps freshMinutes. The window
+                     choices are MIRRORED in lib/settings.js and
+                     public/app.js (a test reads both). GET /api/board's
+                     keepAwake drives the ☕ header mark, and is empty
+                     unless Lease.available() says the lease can reach
+                     Hibearnate.
+                     The stored list is shape-checked in lib/settings.js
+                     and filtered against the live columns at EVERY use
+                     (watchedColumns()), and server.js prunes it on column
+                     delete and at boot: addColumn() slugifies labels, so
+                     a deleted "Merging" re-created later would otherwise
+                     come back watched (or with its old window). Done never
+                     counts, whatever is stored.
 bin/status.js        the one CLI: hook subcommands, Claude subcommands,
                      ensure-server, session resolution
 public/index.html    markup for all three views (board/projects/archive)
