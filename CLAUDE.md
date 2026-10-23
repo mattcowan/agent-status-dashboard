@@ -110,6 +110,12 @@ public/app.js        the entire front end. No framework, no build — and the
                      bottom.
 public/styles.css    all styling, hand-written custom properties
 test/                node:test suites (no runner dependency)
+.github/workflows/   claude-review.yml only (issue #39): an owner-only
+                     "@claude" PR review. Its token cannot write repo
+                     contents, but it can still write PR and issue comments.
+                     Not a test runner, and not a runtime dependency. Actions
+                     are pinned to commit SHAs; keep it in step with
+                     Hibearnate's copy.
 examples/            hook JSON, CLAUDE.md snippet, /post-status — setup copy
 data/                runtime state. gitignored. see constraint 4.
 ```
