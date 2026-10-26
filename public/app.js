@@ -2555,8 +2555,13 @@ function renderUsage() {
   controls.appendChild(sourceLink(CONSOLE_USAGE_URL, 'API usage', 'API usage in the Claude Console (opens in a new tab)', 'api-usage'));
   controls.appendChild(sourceLink(STATUS_URL, 'Status', 'Claude status page (opens in a new tab)', 'status'));
   const refreshBtn = el('button', { class: 'small ghost', title: 'Refresh usage now', 'data-focus-key': 'refresh' }, ['↻']);
+  // aria-disabled, not disabled: disabling the focused button drops focus to
+  // <body> in Chromium before the rebuild runs, so the focus restore above
+  // would find nothing to put back. The attribute doubles as the guard
+  // against a second click while the refresh is in flight.
   refreshBtn.addEventListener('click', async () => {
-    refreshBtn.disabled = true;
+    if (refreshBtn.getAttribute('aria-disabled') === 'true') return;
+    refreshBtn.setAttribute('aria-disabled', 'true');
     const r = await api('POST', '/api/usage/refresh');
     if (r.json) state.usage = r.json;
     renderUsage();

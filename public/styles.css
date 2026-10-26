@@ -357,6 +357,9 @@ button.is-off:hover { border-color: var(--border); }
 .u-controls .u-source { color: var(--muted); white-space: nowrap; }
 .u-controls .u-source:hover { color: var(--text); }
 .u-controls .u-source:focus-visible { outline: 2px solid var(--accent-plain); outline-offset: 2px; border-radius: 3px; }
+/* The ↻ button uses aria-disabled while a refresh runs (a real disabled
+   attribute would drop keyboard focus), so it needs its own dimmed look. */
+.u-controls button[aria-disabled="true"] { opacity: .55; cursor: progress; }
 .u-controls .u-info { cursor: help; color: var(--muted-2); }
 
 /* Board — horizontal scroll so any number of columns fits */
