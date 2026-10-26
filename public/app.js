@@ -2506,6 +2506,12 @@ function renderUsage() {
   const u = state.usage;
   if (!u) { strip.classList.add('hidden'); return; }
   strip.classList.remove('hidden');
+  // The strip is rebuilt on every refresh (each poll and SSE event), which
+  // destroys whatever control a keyboard user is on and drops focus to
+  // <body>. Each focusable control carries a data-focus-key, so the same
+  // control can take focus back once the new strip is in place.
+  const active = document.activeElement;
+  const focusKey = active && strip.contains(active) ? active.dataset.focusKey : null;
   strip.innerHTML = '';
 
   if (u.status === 'never') {
@@ -2545,10 +2551,10 @@ function renderUsage() {
   // from an undocumented endpoint, so when they look wrong (or show an error)
   // the real figures should not need a hunt. API usage is the Console's, for
   // calls made with an API key, which these meters do not cover at all.
-  controls.appendChild(sourceLink(PLAN_USAGE_URL, 'Plan usage', 'Plan usage limits on claude.ai (opens in a new tab)'));
-  controls.appendChild(sourceLink(CONSOLE_USAGE_URL, 'API usage', 'API usage in the Claude Console (opens in a new tab)'));
-  controls.appendChild(sourceLink(STATUS_URL, 'Status', 'Claude status page (opens in a new tab)'));
-  const refreshBtn = el('button', { class: 'small ghost', title: 'Refresh usage now' }, ['↻']);
+  controls.appendChild(sourceLink(PLAN_USAGE_URL, 'Plan usage', 'Plan usage limits on claude.ai (opens in a new tab)', 'plan-usage'));
+  controls.appendChild(sourceLink(CONSOLE_USAGE_URL, 'API usage', 'API usage in the Claude Console (opens in a new tab)', 'api-usage'));
+  controls.appendChild(sourceLink(STATUS_URL, 'Status', 'Claude status page (opens in a new tab)', 'status'));
+  const refreshBtn = el('button', { class: 'small ghost', title: 'Refresh usage now', 'data-focus-key': 'refresh' }, ['↻']);
   refreshBtn.addEventListener('click', async () => {
     refreshBtn.disabled = true;
     const r = await api('POST', '/api/usage/refresh');
@@ -2561,10 +2567,14 @@ function renderUsage() {
     text: 'ⓘ',
     title: "Read from Anthropic's undocumented OAuth usage endpoint — buckets and labels may change or break without notice.",
   }, []));
-  const settingsBtn = el('button', { class: 'small ghost', title: 'Settings', 'aria-label': 'Settings', 'aria-haspopup': 'dialog' }, ['⚙']);
+  const settingsBtn = el('button', { class: 'small ghost', title: 'Settings', 'aria-label': 'Settings', 'aria-haspopup': 'dialog', 'data-focus-key': 'settings' }, ['⚙']);
   settingsBtn.addEventListener('click', openSettings);
   controls.appendChild(settingsBtn);
   strip.appendChild(controls);
+  if (focusKey) {
+    const again = strip.querySelector('[data-focus-key="' + focusKey + '"]');
+    if (again) again.focus();
+  }
 }
 
 // The pages the strip links to, checked against Anthropic's docs and help
@@ -2575,11 +2585,12 @@ const CONSOLE_USAGE_URL = 'https://platform.claude.com/usage';
 const STATUS_URL = 'https://status.claude.com';
 
 // An external link that says it opens a new tab in its accessible name, not
-// only in a glyph a screen reader may skip.
-function sourceLink(href, text, label) {
+// only in a glyph a screen reader may skip. focusKey is what renderUsage()
+// uses to put focus back on this link after the strip is rebuilt.
+function sourceLink(href, text, label, focusKey) {
   return el('a', {
     class: 'u-source', href: href, target: '_blank', rel: 'noopener noreferrer',
-    title: label, 'aria-label': label,
+    title: label, 'aria-label': label, 'data-focus-key': focusKey,
   }, [text + ' ↗']);
 }
 
