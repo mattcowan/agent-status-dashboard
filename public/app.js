@@ -2541,6 +2541,13 @@ function renderUsage() {
   if (u.fetchedAt) {
     controls.appendChild(el('span', { class: 'u-note' + (u.stale ? ' stale' : ''), text: 'usage as of ' + relTime(u.fetchedAt) }, []));
   }
+  // The authoritative pages, a click away. The meters above are a copy read
+  // from an undocumented endpoint, so when they look wrong (or show an error)
+  // the real figures should not need a hunt. API usage is the Console's, for
+  // calls made with an API key, which these meters do not cover at all.
+  controls.appendChild(sourceLink(PLAN_USAGE_URL, 'Plan usage', 'Plan usage limits on claude.ai (opens in a new tab)'));
+  controls.appendChild(sourceLink(CONSOLE_USAGE_URL, 'API usage', 'API usage in the Claude Console (opens in a new tab)'));
+  controls.appendChild(sourceLink(STATUS_URL, 'Status', 'Claude status page (opens in a new tab)'));
   const refreshBtn = el('button', { class: 'small ghost', title: 'Refresh usage now' }, ['↻']);
   refreshBtn.addEventListener('click', async () => {
     refreshBtn.disabled = true;
@@ -2558,6 +2565,22 @@ function renderUsage() {
   settingsBtn.addEventListener('click', openSettings);
   controls.appendChild(settingsBtn);
   strip.appendChild(controls);
+}
+
+// The pages the strip links to, checked against Anthropic's docs and help
+// center (2026-10-26); status.anthropic.com now 301s to status.claude.com.
+// Constants rather than settings: they are the same for every account.
+const PLAN_USAGE_URL = 'https://claude.ai/settings/usage';
+const CONSOLE_USAGE_URL = 'https://platform.claude.com/usage';
+const STATUS_URL = 'https://status.claude.com';
+
+// An external link that says it opens a new tab in its accessible name, not
+// only in a glyph a screen reader may skip.
+function sourceLink(href, text, label) {
+  return el('a', {
+    class: 'u-source', href: href, target: '_blank', rel: 'noopener noreferrer',
+    title: label, 'aria-label': label,
+  }, [text + ' ↗']);
 }
 
 // ---------- settings dialog ----------

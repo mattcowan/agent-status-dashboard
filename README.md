@@ -367,6 +367,13 @@ and the % text, which carry the same meaning without relying on hue.
   server in `data/settings.json`.
 - If the token has expired, the strip says so; opening any Claude Code session
   refreshes it.
+- The strip has three links. They open in a new tab:
+  - **Plan usage ↗** opens `claude.ai/settings/usage`, the authoritative page
+    for the plan limits. The meters in the strip are a copy.
+  - **API usage ↗** opens the Usage page in the Claude Console
+    (`platform.claude.com/usage`), for API calls made with an API key.
+  - **Status ↗** opens `status.claude.com`, the Claude status page.
+- The dashboard does not read these pages. They are links only.
 
 ## Live updates & notifications
 
