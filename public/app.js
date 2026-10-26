@@ -2496,6 +2496,11 @@ function fullReset(iso) {
   });
 }
 
+// True while a ↻ refresh is in flight. It lives here, not on the button,
+// because a poll or SSE event can rebuild the strip mid-refresh: a guard kept
+// on the old button vanished with it, and the fresh ↻ started a second one.
+let usageRefreshing = false;
+
 async function refreshUsage() {
   const r = await api('GET', '/api/usage');
   if (r.json) { state.usage = r.json; renderUsage(); }
@@ -2557,14 +2562,24 @@ function renderUsage() {
   const refreshBtn = el('button', { class: 'small ghost', title: 'Refresh usage now', 'data-focus-key': 'refresh' }, ['↻']);
   // aria-disabled, not disabled: disabling the focused button drops focus to
   // <body> in Chromium before the rebuild runs, so the focus restore above
-  // would find nothing to put back. The attribute doubles as the guard
-  // against a second click while the refresh is in flight.
+  // would find nothing to put back. usageRefreshing is the real guard; the
+  // attribute only shows it, and is set again on a button rebuilt mid-refresh.
+  // finally: fetch rejects when the dashboard server is down, and without it
+  // the flag stayed set and ↻ ignored every click until a reload.
+  if (usageRefreshing) refreshBtn.setAttribute('aria-disabled', 'true');
   refreshBtn.addEventListener('click', async () => {
-    if (refreshBtn.getAttribute('aria-disabled') === 'true') return;
+    if (usageRefreshing) return;
+    usageRefreshing = true;
     refreshBtn.setAttribute('aria-disabled', 'true');
-    const r = await api('POST', '/api/usage/refresh');
-    if (r.json) state.usage = r.json;
-    renderUsage();
+    try {
+      const r = await api('POST', '/api/usage/refresh');
+      if (r.json) state.usage = r.json;
+    } catch (_) {
+      /* ignore: the server is down, so the strip keeps its last snapshot */
+    } finally {
+      usageRefreshing = false;
+      renderUsage();
+    }
   });
   controls.appendChild(refreshBtn);
   controls.appendChild(el('span', {
