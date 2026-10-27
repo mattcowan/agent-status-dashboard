@@ -349,7 +349,17 @@ button.is-off:hover { border-color: var(--border); }
 .u-note { color: var(--muted-2); }
 .u-note.stale { color: var(--warn-text); }
 .u-error { color: var(--warn-text); }
-.u-controls { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+/* flex-wrap: the note, three links and the buttons are wider than a 320px
+   screen, and without wrapping they pushed the whole page sideways. */
+.u-controls { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+/* Links to the authoritative pages (plan usage, API usage, status). Muted so
+   they don't compete with the meters, full text color on hover. */
+.u-controls .u-source { color: var(--muted); white-space: nowrap; }
+.u-controls .u-source:hover { color: var(--text); }
+.u-controls .u-source:focus-visible { outline: 2px solid var(--accent-plain); outline-offset: 2px; border-radius: 3px; }
+/* The ↻ button uses aria-disabled while a refresh runs (a real disabled
+   attribute would drop keyboard focus), so it needs its own dimmed look. */
+.u-controls button[aria-disabled="true"] { opacity: .55; cursor: progress; }
 .u-controls .u-info { cursor: help; color: var(--muted-2); }
 
 /* Board — horizontal scroll so any number of columns fits */
