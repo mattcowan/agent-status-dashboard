@@ -32,6 +32,7 @@ its project folder, git remote and branch, the model that did the work, and a
 | Trigger | What happens |
 |---|---|
 | **First prompt** (UserPromptSubmit hook) | Creates this session's card in **Working**, tagged with the folder. Only fires once you actually send a message, so opening an empty chat never makes a ticket. |
+| **Your reply** (UserPromptSubmit hook) on a card in *Needs Input* | Moves it back to **Working** (logged in its history); the Stop backstop returns it to *Needs Input* if the turn ends without an outcome. Ready for Review and your own columns are left alone. |
 | **Every prompt / Stop** | Refreshes the card's session metadata from the transcript: the **auto-generated session title** (same as the VS Code tab title — shown italic as the headline until Claude sets one), the plan **slug**, the **git branch** (⎇ badge, linked on GitHub repos), and the transcript path. |
 | Claude runs `status.js set` | Sets the headline + description (stays **Working**). |
 | Claude runs `status.js note` | Appends a bullet as the task sprawls. |
